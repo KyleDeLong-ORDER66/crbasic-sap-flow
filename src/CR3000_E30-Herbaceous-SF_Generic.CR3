@@ -1,0 +1,281 @@
+'CR3000 Series Datalogger
+'Version: 2025.v14
+'Created: 06/28/2024 (Modified on 10/20/2025)
+'Updated History: 06/28/2024;07/02/2024;07/09/2024;07/25/2024(v6);05/29/2025(v10); 05/30/2025(v11); 06/29/2025(v14)
+'Author: Kyle DeLong (ORDER66)
+'Description: Program to measure 14 East30 3 needle sap flow sensor with CR3000 datalogger and 1 flux zones. 
+
+'Nomenclature:
+'T = Top (needle; usually downstream)
+'B = Bottom (needle; usually upstream)
+'M = Middle (thermistor position on needle)
+'S# = Sensor
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'E30 Herbaceous Sap Flow Wiring Instructions
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'Sensor 1
+'	-> Red     |  Excitation All                    |  Vx1
+'	-> Blue    |  Ground All                        |  GND (signal ground)
+'	-> Yellow  |  Far Needle (top) Middle Therm.    |  SE1
+'	-> White   |  Near Needle (bot.) Middle Therm.  |  SE5
+'	-> Black   |  Heater Ground or Heat             |  Interface Heater 'G' next to 'H' (3rd column from left)
+'	-> Green   |  Heater Ground or Heat             |  Connect (twist together) to 2nd sensor's green wire
+'
+'Sensor 2
+'	-> Red     |  Excitation All                    |  Vx1
+'	-> Blue    |  Ground All                        |  GND (signal ground)
+'	-> Yellow  |  Far Needle (top) Middle Therm.    |  SE2
+'	-> White   |  Near Needle (bot.) Middle Therm.  |  SE6
+'	-> Black   |  Heater Ground or Heat             |  Interface Heater 'H' (4th column from left)
+'	-> Green   |  Heater Ground or Heat             |  Connect (twist together) to 2nd sensor's green wire
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'CONSTANTS TABLES:
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+ConstTable(CONST_SN,0) 'FIXME: Change Serial Number when applicable
+  Const STATION_NUMBER = "S0" 'FIXME: Change Station number when applicable
+  Const DEPLOYMENT_NUMBER = "D0" 'FIXME Change Deployment number when applicable
+  
+  Const TABLE_NAME_SAPFLOW = "PROJECT_YEAR_S_" + STATION_NUMBER 'SF Sap
+  Const TABLE_NAME_TEMPERATURE = "PROJECT_YEAR_T_" + STATION_NUMBER 'SF Temperature
+  
+  Const NUM_SENSORS = 14 '7 pairs of 2
+  Const COLLECT_TIME_PRE_PULSE_SEC = 30 'Time into TimeIntoInterval for when to start the heat pulse
+  Const COLLECT_TIME_POST_PULSE_SEC = 100 'How long the sap flow sensors should be recording temperature after pulse starts (in seconds)
+  Const COLLECT_TIME_TOTAL_SEC = COLLECT_TIME_POST_PULSE_SEC + COLLECT_TIME_PRE_PULSE_SEC 'Time of collection before pulse and after pulse (right now it is 30 seconds for temperature drift, and 100 seconds after pulse)
+  Const SAP_FLOW_TOTAL_TIME_SEC = 900 'Temporal resolution of sap flow data (in seconds; 900sec = 15min)
+  
+  Const xd = 0.006 'distance between heated needle and downstream needle [m]
+  Const xu = 0.006 'distance between heated needle and upstream needle [m]
+  Const pi = 3.1416
+  Const therm_cond = 0.5 'thermal conductivity of sapwood [W m-1 K-1]
+  Const Cw = 4180000 'volumetric heat capacity of water [J m-3 K-1]
+  
+  Const SEC_IN_HOUR = 3600
+  
+  Const PULSE_LENGTH_TIME  = 8 'Number of iterations (in time) for heater to be on for [s]
+EndConstTable
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'SAP FLOW VARIABLES
+
+Public PULSE_COUNT = 0 'Make an integer
+
+'HBraw - Raw half-bridge thermistor value
+Public HBraw_yellow_TM_S(NUM_SENSORS), HBraw_white_BM_S(NUM_SENSORS)
+
+'HBx - Half-bridge thermistor value with a natural log function applied
+Public HBx_yellow_TM_S(NUM_SENSORS), HBx_white_BM_S(NUM_SENSORS)
+
+'Temps - Converted temperature values
+Public Temp_yellow_TM_S(NUM_SENSORS), Temp_white_BM_S(NUM_SENSORS)
+
+'Delta - Difference in the present temp and the temp at index 1
+Public deltaTemp_yellow_TM_S(NUM_SENSORS), deltaTemp_white_BM_S(NUM_SENSORS)
+
+'Ratio - ratio of temperature changes for a sensor (between top and bottom needle) for 60s (i.e., E30 method)
+Public ratio_M_S(NUM_SENSORS)
+
+'deltaTempSum - The totalize of the delta temps for the Balagram and Srinivasan method
+Public ratio_M_Avg_S(NUM_SENSORS)
+
+'Velocity
+Public velocity_M_Balaram_S(NUM_SENSORS) ',velocity_M_E30_S(NUM_SENSORS)
+
+'SAP FLOW UNITS
+Units Temp_yellow_TM_S(), Temp_white_BM_S(), deltaTemp_yellow_TM_S(), deltaTemp_white_BM_S() = degC
+Units ratio_M_S() = degC_per_degC
+Units velocity_M_Balaram_S() = m_per_s
+
+Public temp_ratio_sum_S(NUM_SENSORS)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'RANDOM OR OTHER VARIABLES
+Public i_sap_time = -1*COLLECT_TIME_PRE_PULSE_SEC 'Always start at -30 seconds (pre-pulse temperature
+Public i_sensor
+Public BattV(4), PTemp
+Public Diff = therm_cond/Cw
+
+Public StartTime As Long
+Public EndTime As Long
+Public ComputeTime_musec As Long
+Public StartTime2 As Long
+Public EndTime2 As Long
+Public ComputeTime2_musec As Long
+
+Alias BattV(1) = BatteryV
+Alias BattV(2) = ChargeIn
+Alias BattV(3) = ChargeOut
+Alias BattV(4) = LithiumV
+
+Units BattV() = V
+Units PTemp = degC
+Units ComputeTime_musec = microSec
+Units ComputeTime2_musec = microSec
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'VARIABLES THAT CHANGE OR FIXME RELATED
+Public HEATER_ON_OR_OFF = 0 '(1) = True[ON]  (0)=FALSE[OFF]
+Public HEATER_STATUS = -999
+ReadOnly HEATER_STATUS
+
+Public FLAG_SAPFLOW_RUNNING = FALSE
+Public TABLE_TOTAL_TRIGGER_MODE = FALSE
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'DATATABLES:
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+DataTable(TABLE_NAME_SAPFLOW,True,-1)
+  DataInterval(0,SAP_FLOW_TOTAL_TIME_SEC,Sec,10)
+  'CardOut(0,-1) 'Need this if using Compact Flash (CF) card
+  Sample(1,STATION_NUMBER,String)
+  FieldNames("Station:")
+  Sample(1,DEPLOYMENT_NUMBER,String)
+  FieldNames("Deployment:")
+  Sample(1,PULSE_COUNT,UINT2)
+  
+  'Sample(NUM_SENSORS,velocity_M_E30_S(),IEEE4) 'Standard/default velocity at 60seconds
+  Sample(NUM_SENSORS,velocity_M_Balaram_S(),IEEE4) 'More statistical, velocity average between 60-100seconds
+  Sample(NUM_SENSORS,ratio_M_Avg_S(),IEEE4)
+  'Sample(NUM_SENSORS,temp_ratio_sum_S(),IEEE4)
+EndTable
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+DataTable(TABLE_NAME_TEMPERATURE,TABLE_TOTAL_TRIGGER_MODE,-1)
+  DataTime(1) 'Report time when table is called
+  CardOut(0,-1) 'Need this if using Compact Flash (CF) card; for this data, it is advised to always have CF card for this table
+  
+  Sample(1,STATION_NUMBER,String)
+  FieldNames("Station:")
+  Sample(1,DEPLOYMENT_NUMBER,String)
+  FieldNames("Deployment:")
+  
+  Sample(1,i_sap_time,FP2)
+  Sample(1,PULSE_COUNT,UINT2)
+  
+  Sample(1,HEATER_STATUS,FP2)
+  Sample(1,HEATER_ON_OR_OFF,FP2)
+  
+  Sample(NUM_SENSORS,HBraw_yellow_TM_S(),IEEE4)
+  Sample(NUM_SENSORS,HBraw_white_BM_S(),IEEE4)
+  Sample(NUM_SENSORS,Temp_yellow_TM_S(),IEEE4)
+  Sample(NUM_SENSORS,Temp_white_BM_S(),IEEE4)
+  Sample(NUM_SENSORS,deltaTemp_yellow_TM_S(),IEEE4)
+  Sample(NUM_SENSORS,deltaTemp_white_BM_S(),IEEE4)
+  'Sample(NUM_SENSORS,ratio_M_S(),IEEE4)
+EndTable
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'SUBROUTINES:
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'NONE
+
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'MAIN PROGRAM:
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+BeginProg
+  Scan(1,sec,1,0)'1sec resolution
+    StartTime = Timer(0,uSec,2)'0=start, 1=stop, 2=reset and start, 3=stop and reset
+    
+    Battery(BattV())
+    PanelTemp(PTemp,_60Hz)
+    
+    'Triggers when we are at '0' every 900 seconds
+    If TimeIntoInterval(0,SAP_FLOW_TOTAL_TIME_SEC,sec) Then FLAG_SAPFLOW_RUNNING = TRUE:PULSE_COUNT += 1 'Add a pulse everytime we trigger 'FLAG_SAPFLOW_RUNNING'
+    'Triggers when we are at '130' every 900 seconds
+    If TimeIntoInterval(COLLECT_TIME_TOTAL_SEC+1,SAP_FLOW_TOTAL_TIME_SEC,sec) Then FLAG_SAPFLOW_RUNNING = FALSE
+
+    If FLAG_SAPFLOW_RUNNING
+      '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+      StartTime2 = Timer(1,uSec,2)'0=start, 1=stop, 3=stop and reset
+      Dim initialTemp_yellow_TM_S(NUM_SENSORS)
+      Dim initialTemp_white_BM_S(NUM_SENSORS)
+      
+      'HBraw Values - Thermistor Step 1
+      BrHalf(HBraw_yellow_TM_S(),NUM_SENSORS,mV200,1,Vx1,4,30,True,0,_60Hz,1.0,0)
+      BrHalf(HBraw_white_BM_S(),NUM_SENSORS,mV200,1+NUM_SENSORS,Vx1,4,30,True,0,_60Hz,1.0,0)
+      
+      For i_sensor = 1 To NUM_SENSORS 'End of range is INCLUSIVE
+        'HBx Conversion - Thermistor Step 2
+        HBx_yellow_TM_S(i_sensor) = LN(1/HBraw_yellow_TM_S(i_sensor)-1)
+        HBx_white_BM_S(i_sensor) = LN(1/HBraw_white_BM_S(i_sensor)-1)
+
+        'Temp Conversion - Thermistor Step 3
+        Temp_yellow_TM_S(i_sensor) = -.0837*HBx_yellow_TM_S(i_sensor)^3+1.532+HBx_yellow_TM_S(i_sensor)^2-22.843*HBx_yellow_TM_S(i_sensor)+25.019
+        Temp_white_BM_S(i_sensor) = -.0837*HBx_white_BM_S(i_sensor)^3+1.532+HBx_white_BM_S(i_sensor)^2-22.843*HBx_white_BM_S(i_sensor)+25.019
+      Next i_sensor
+
+      'If statement to determine how to set the control port (i.e., the heater is on or off)
+      If (i_sap_time >= 0) AND (i_sap_time <= (0 + PULSE_LENGTH_TIME)) Then 'For example, should be from 30seconds into the interval to 38 seconds, i_sap_time is a 1sec resolution from Scan but starts at -30 (the pre-pulse time)
+        PortSet(1,HEATER_ON_OR_OFF) 'condition is always set to "FALSE" until you change public variable from CR3000 screen in field
+        HEATER_STATUS = 100
+      Else
+        PortSet(1,0)
+        HEATER_STATUS = 0
+      EndIf
+      
+      'If statement to determine when to start computing the deltas and ratios (any time but the first time)
+      If i_sap_time = 0 Then 'There is no change for the first time index (this is when the heater is just getting turned on)
+        For i_sensor = 1 To NUM_SENSORS
+          initialTemp_yellow_TM_S(i_sensor) = Temp_yellow_TM_S(i_sensor)
+          initialTemp_white_BM_S(i_sensor) = Temp_white_BM_S(i_sensor)
+          deltaTemp_yellow_TM_S(i_sensor) = 0 'No temp change should be happening
+          deltaTemp_white_BM_S(i_sensor) = 0 'No temp change should be happening
+          ratio_M_S(i_sensor) = 0 'No temp change should be happening
+        Next i_sensor
+      ElseIf i_sap_time > 0 Then
+        For i_sensor = 1 To NUM_SENSORS
+          deltaTemp_yellow_TM_S(i_sensor) = Temp_yellow_TM_S(i_sensor) - initialTemp_yellow_TM_S(i_sensor)
+          deltaTemp_white_BM_S(i_sensor) = Temp_white_BM_S(i_sensor) - initialTemp_white_BM_S(i_sensor)
+          ratio_M_S(i_sensor) = (deltaTemp_yellow_TM_S(i_sensor)/deltaTemp_white_BM_S(i_sensor))
+          If i_sap_time >= 60 AND i_sap_time <= COLLECT_TIME_POST_PULSE_SEC Then 'So from 60sec to 100sec
+            temp_ratio_sum_S(i_sensor) = temp_ratio_sum_S(i_sensor) + ratio_M_S(i_sensor) 'Adding temp_ratio_sum to itself with ratio for respective sensor; Balagram suggests going from 60 to 100sec for taking the avg
+          EndIf
+        Next i_sensor
+      EndIf
+
+      'If statement to determine when to compute a given velocity method; Commented out to save computation time for now
+      'If i_sap_time = 60 Then 'This will trigger the E30 method
+      '  For i_sensor = 1 To NUM_SENSORS
+      '    velocity_M_E30_S(i_sensor) = (LN(deltaTemp_yellow_TM_S(i_sensor)/deltaTemp_white_BM_S(i_sensor))*2*therm_cond)/((xd+xu)*Cw)
+      '  Next i_sensor
+      'ElseIf i_sap_time = COLLECT_TIME_POST_PULSE_SEC-1 Then 'This will trigger the Balaram and Srinivasan method
+      If i_sap_time = COLLECT_TIME_POST_PULSE_SEC-1 Then 'This will trigger the Balaram and Srinivasan method
+        For i_sensor = 1 To NUM_SENSORS 'Totalize the ratios to get average
+          ratio_M_Avg_S(i_sensor) = temp_ratio_sum_S(i_sensor) / (COLLECT_TIME_POST_PULSE_SEC-60)'Get the average ratio from 60 to 100sec
+          velocity_M_Balaram_S(i_sensor) = (Diff/xd)*LN(ratio_M_Avg_S(i_sensor)) 'Compute the Balaram and Srinivasan velocity method with average ratio and diffusivity
+        Next i_sensor
+      EndIf
+
+      'Table temperature table if it is within COLLECT_TIME_PRE_PULSE_SEC and COLLECT_TIME_POST_PULSE_SEC
+      CallTable TABLE_NAME_TEMPERATURE
+      i_sap_time += 1 'Add to our index
+      EndTime2 = Timer(1,uSec,1)'0=start, 1=stop, 3=stop and reset
+      ComputeTime2_musec = EndTime2 - StartTime2  ' Time in microseconds
+      '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''  
+    Else 'When we past 130seconds, reset everything
+      CallTable TABLE_NAME_SAPFLOW 'Must call this table before we overwrite the "temp_ratio_sum_S()" values
+      i_sap_time = -1*COLLECT_TIME_PRE_PULSE_SEC
+      'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
+      'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
+      For i_sensor = 1 To NUM_SENSORS
+        temp_ratio_sum_S(i_sensor) = 0
+      Next
+    EndIf
+    
+    EndTime = Timer(0,uSec,1)
+    ComputeTime_musec = EndTime - StartTime  ' Time in microseconds
+  NextScan
+EndProg
