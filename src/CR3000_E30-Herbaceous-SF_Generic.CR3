@@ -220,9 +220,11 @@ BeginProg
       'If statement to determine how to set the control port (i.e., the heater is on or off)
       If (i_sap_time >= 0) AND (i_sap_time <= (0 + PULSE_LENGTH_TIME)) Then 'For example, should be from 30seconds into the interval to 38 seconds, i_sap_time is a 1sec resolution from Scan but starts at -30 (the pre-pulse time)
         PortSet(1,HEATER_ON_OR_OFF) 'condition is always set to "FALSE" until you change public variable from CR3000 screen in field
+        PortSet(2,HEATER_ON_OR_OFF)
         HEATER_STATUS = 100
       Else
         PortSet(1,0)
+        PortSet(2,0)
         HEATER_STATUS = 0
       EndIf
       
