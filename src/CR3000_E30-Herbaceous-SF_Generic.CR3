@@ -41,7 +41,7 @@ ConstTable(CONST_SN,0) 'FIXME: Change Serial Number when applicable
   Const DEPLOYMENT_NUMBER = "D0" 'FIXME Change Deployment number when applicable
   
   Const TABLE_NAME_SAPFLOW = "PROJECT_YEAR_S_" + STATION_NUMBER 'SF Sap
-  Const TABLE_NAME_TEMPERATURE = "PROJECT_YEAR_T_" + STATION_NUMBER 'SF Temperature
+  'Const TABLE_NAME_TEMPERATURE = "PROJECT_YEAR_T_" + STATION_NUMBER 'SF Temperature
   
   Const NUM_SENSORS = 14 '7 pairs of 2
   Const COLLECT_TIME_PRE_PULSE_SEC = 30 'Time into TimeIntoInterval for when to start the heat pulse
@@ -128,7 +128,7 @@ Public HEATER_STATUS = -999
 ReadOnly HEATER_STATUS
 
 Public FLAG_SAPFLOW_RUNNING = FALSE
-Public TABLE_TOTAL_TRIGGER_MODE = FALSE
+'Public TABLE_TOTAL_TRIGGER_MODE = FALSE
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -151,29 +151,29 @@ EndTable
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-DataTable(TABLE_NAME_TEMPERATURE,TABLE_TOTAL_TRIGGER_MODE,-1)
-  DataTime(1) 'Report time when table is called
-  CardOut(0,-1) 'Need this if using Compact Flash (CF) card; for this data, it is advised to always have CF card for this table
-  
-  Sample(1,STATION_NUMBER,String)
-  FieldNames("Station:")
-  Sample(1,DEPLOYMENT_NUMBER,String)
-  FieldNames("Deployment:")
-  
-  Sample(1,i_sap_time,FP2)
-  Sample(1,PULSE_COUNT,UINT2)
-  
-  Sample(1,HEATER_STATUS,FP2)
-  Sample(1,HEATER_ON_OR_OFF,FP2)
-  
-  Sample(NUM_SENSORS,HBraw_yellow_TM_S(),IEEE4)
-  Sample(NUM_SENSORS,HBraw_white_BM_S(),IEEE4)
-  Sample(NUM_SENSORS,Temp_yellow_TM_S(),IEEE4)
-  Sample(NUM_SENSORS,Temp_white_BM_S(),IEEE4)
-  Sample(NUM_SENSORS,deltaTemp_yellow_TM_S(),IEEE4)
-  Sample(NUM_SENSORS,deltaTemp_white_BM_S(),IEEE4)
-  'Sample(NUM_SENSORS,ratio_M_S(),IEEE4)
-EndTable
+'DataTable(TABLE_NAME_TEMPERATURE,TABLE_TOTAL_TRIGGER_MODE,-1)
+'  DataTime(1) 'Report time when table is called
+'  CardOut(0,-1) 'Need this if using Compact Flash (CF) card; for this data, it is advised to always have CF card for this table
+'  
+'  Sample(1,STATION_NUMBER,String)
+'  FieldNames("Station:")
+'  Sample(1,DEPLOYMENT_NUMBER,String)
+'  FieldNames("Deployment:")
+'  
+'  Sample(1,i_sap_time,FP2)
+'  Sample(1,PULSE_COUNT,UINT2)
+'  
+'  Sample(1,HEATER_STATUS,FP2)
+'  Sample(1,HEATER_ON_OR_OFF,FP2)
+'  
+'  Sample(NUM_SENSORS,HBraw_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,HBraw_white_BM_S(),IEEE4)
+'  Sample(NUM_SENSORS,Temp_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,Temp_white_BM_S(),IEEE4)
+'  Sample(NUM_SENSORS,deltaTemp_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,deltaTemp_white_BM_S(),IEEE4)
+'  'Sample(NUM_SENSORS,ratio_M_S(),IEEE4)
+'EndTable
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
@@ -187,7 +187,7 @@ EndTable
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 BeginProg
   Scan(1,sec,1,0)'1sec resolution
-    StartTime = Timer(0,uSec,2)'0=start, 1=stop, 2=reset and start, 3=stop and reset
+    StartTime = Timer(0,mSec,2)'0=start, 1=stop, 2=reset and start, 3=stop and reset
     
     Battery(BattV())
     PanelTemp(PTemp,_60Hz)
@@ -199,7 +199,7 @@ BeginProg
 
     If FLAG_SAPFLOW_RUNNING
       '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-      StartTime2 = Timer(1,uSec,2)'0=start, 1=stop, 3=stop and reset
+      StartTime2 = Timer(1,mSec,2)'0=start, 1=stop, 3=stop and reset
       Dim initialTemp_yellow_TM_S(NUM_SENSORS)
       Dim initialTemp_white_BM_S(NUM_SENSORS)
       
@@ -262,13 +262,12 @@ BeginProg
       EndIf
 
       'Table temperature table if it is within COLLECT_TIME_PRE_PULSE_SEC and COLLECT_TIME_POST_PULSE_SEC
-      CallTable TABLE_NAME_TEMPERATURE
+      'CallTable TABLE_NAME_TEMPERATURE
       i_sap_time += 1 'Add to our index
-      EndTime2 = Timer(1,uSec,1)'0=start, 1=stop, 3=stop and reset
+      EndTime2 = Timer(1,mSec,1)'0=start, 1=stop, 3=stop and reset
       ComputeTime2_musec = EndTime2 - StartTime2  ' Time in microseconds
       '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''  
     Else 'When we past 130seconds, reset everything
-      CallTable TABLE_NAME_SAPFLOW 'Must call this table before we overwrite the "temp_ratio_sum_S()" values
       i_sap_time = -1*COLLECT_TIME_PRE_PULSE_SEC
       'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
       'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
@@ -276,8 +275,9 @@ BeginProg
         temp_ratio_sum_S(i_sensor) = 0
       Next
     EndIf
-    
-    EndTime = Timer(0,uSec,1)
+    CallTable TABLE_NAME_SAPFLOW 'Must call this table before we overwrite the "temp_ratio_sum_S()" values
+      
+    EndTime = Timer(0,mSec,1)
     ComputeTime_musec = EndTime - StartTime  ' Time in microseconds
   NextScan
 EndProg
