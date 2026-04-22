@@ -43,7 +43,7 @@ ConstTable(CONST_SN,0) 'FIXME: Change Serial Number when applicable
   Const TABLE_NAME_SAPFLOW = "PROJECT_YEAR_S_" + STATION_NUMBER 'SF Sap
   'Const TABLE_NAME_TEMPERATURE = "PROJECT_YEAR_T_" + STATION_NUMBER 'SF Temperature
   
-  Const NUM_SENSORS = 14 '7 pairs of 2
+  Const NUM_SENSORS = 2 '7 pairs of 2
   Const COLLECT_TIME_PRE_PULSE_SEC = 30 'Time into TimeIntoInterval for when to start the heat pulse
   Const COLLECT_TIME_POST_PULSE_SEC = 100 'How long the sap flow sensors should be recording temperature after pulse starts (in seconds)
   Const COLLECT_TIME_TOTAL_SEC = COLLECT_TIME_POST_PULSE_SEC + COLLECT_TIME_PRE_PULSE_SEC 'Time of collection before pulse and after pulse (right now it is 30 seconds for temperature drift, and 100 seconds after pulse)
