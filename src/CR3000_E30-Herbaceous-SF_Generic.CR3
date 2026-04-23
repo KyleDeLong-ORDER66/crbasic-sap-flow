@@ -143,10 +143,10 @@ DataTable(TABLE_NAME_SAPFLOW,True,-1)
   FieldNames("Deployment:")
   Sample(1,PULSE_COUNT,UINT2)
   
-  'Sample(,velocity_M_E30_S(),IEEE4) 'Standard/default velocity at 60seconds
-  Sample(,velocity_M_Balaram_S(),IEEE4) 'More statistical, velocity average between 60-100seconds
-  Sample(,ratio_M_Avg_S(),IEEE4)
-  'Sample(,temp_ratio_sum_S(),IEEE4)
+  'Sample(NUM_SENSORS,velocity_M_E30_S(),IEEE4) 'Standard/default velocity at 60seconds
+  Sample(NUM_SENSORS,velocity_M_Balaram_S(),IEEE4) 'More statistical, velocity average between 60-100seconds
+  Sample(NUM_SENSORS,ratio_M_Avg_S(),IEEE4)
+  'Sample(NUM_SENSORS,temp_ratio_sum_S(),IEEE4)
 EndTable
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
@@ -166,13 +166,13 @@ EndTable
 '  Sample(1,HEATER_STATUS,FP2)
 '  Sample(1,HEATER_ON_OR_OFF,FP2)
 '  
-'  Sample(,HBraw_yellow_TM_S(),IEEE4)
-'  Sample(,HBraw_white_BM_S(),IEEE4)
-'  Sample(,Temp_yellow_TM_S(),IEEE4)
-'  Sample(,Temp_white_BM_S(),IEEE4)
-'  Sample(,deltaTemp_yellow_TM_S(),IEEE4)
-'  Sample(,deltaTemp_white_BM_S(),IEEE4)
-'  'Sample(,ratio_M_S(),IEEE4)
+'  Sample(NUM_SENSORS,HBraw_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,HBraw_white_BM_S(),IEEE4)
+'  Sample(NUM_SENSORS,Temp_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,Temp_white_BM_S(),IEEE4)
+'  Sample(NUM_SENSORS,deltaTemp_yellow_TM_S(),IEEE4)
+'  Sample(NUM_SENSORS,deltaTemp_white_BM_S(),IEEE4)
+'  'Sample(NUM_SENSORS,ratio_M_S(),IEEE4)
 'EndTable
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -200,14 +200,14 @@ BeginProg
     If FLAG_SAPFLOW_RUNNING
       '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
       StartTime2 = Timer(1,mSec,2)'0=start, 1=stop, 3=stop and reset
-      Dim initialTemp_yellow_TM_S()
-      Dim initialTemp_white_BM_S()
+      Dim initialTemp_yellow_TM_S(NUM_SENSORS)
+      Dim initialTemp_white_BM_S(NUM_SENSORS)
       
       'HBraw Values - Thermistor Step 1
-      BrHalf(HBraw_yellow_TM_S(),,mV200,1,Vx1,4,30,True,0,_60Hz,1.0,0)
-      BrHalf(HBraw_white_BM_S(),,mV200,15,Vx1,4,30,True,0,_60Hz,1.0,0)
+      BrHalf(HBraw_yellow_TM_S(),NUM_SENSORS,mV200,1,Vx1,4,30,True,0,_60Hz,1.0,0)
+      BrHalf(HBraw_white_BM_S(),NUM_SENSORS,mV200,15,Vx1,4,30,True,0,_60Hz,1.0,0)
       
-      For i_sensor = 1 To  'End of range is INCLUSIVE
+      For i_sensor = 1 To NUM_SENSORS 'End of range is INCLUSIVE
         'HBx Conversion - Thermistor Step 2
         HBx_yellow_TM_S(i_sensor) = LN(1/HBraw_yellow_TM_S(i_sensor)-1)
         HBx_white_BM_S(i_sensor) = LN(1/HBraw_white_BM_S(i_sensor)-1)
@@ -230,7 +230,7 @@ BeginProg
       
       'If statement to determine when to start computing the deltas and ratios (any time but the first time)
       If i_sap_time = 0 Then 'There is no change for the first time index (this is when the heater is just getting turned on)
-        For i_sensor = 1 To 
+        For i_sensor = 1 To NUM_SENSORS
           initialTemp_yellow_TM_S(i_sensor) = Temp_yellow_TM_S(i_sensor)
           initialTemp_white_BM_S(i_sensor) = Temp_white_BM_S(i_sensor)
           deltaTemp_yellow_TM_S(i_sensor) = 0 'No temp change should be happening
@@ -238,7 +238,7 @@ BeginProg
           ratio_M_S(i_sensor) = 0 'No temp change should be happening
         Next i_sensor
       ElseIf i_sap_time > 0 Then
-        For i_sensor = 1 To 
+        For i_sensor = 1 To NUM_SENSORS
           deltaTemp_yellow_TM_S(i_sensor) = Temp_yellow_TM_S(i_sensor) - initialTemp_yellow_TM_S(i_sensor)
           deltaTemp_white_BM_S(i_sensor) = Temp_white_BM_S(i_sensor) - initialTemp_white_BM_S(i_sensor)
           ratio_M_S(i_sensor) = (deltaTemp_yellow_TM_S(i_sensor)/deltaTemp_white_BM_S(i_sensor))
@@ -250,12 +250,12 @@ BeginProg
 
       'If statement to determine when to compute a given velocity method; Commented out to save computation time for now
       'If i_sap_time = 60 Then 'This will trigger the E30 method
-      '  For i_sensor = 1 To 
+      '  For i_sensor = 1 To NUM_SENSORS
       '    velocity_M_E30_S(i_sensor) = (LN(deltaTemp_yellow_TM_S(i_sensor)/deltaTemp_white_BM_S(i_sensor))*2*therm_cond)/((xd+xu)*Cw)
       '  Next i_sensor
       'ElseIf i_sap_time = COLLECT_TIME_POST_PULSE_SEC-1 Then 'This will trigger the Balaram and Srinivasan method
       If i_sap_time = COLLECT_TIME_POST_PULSE_SEC-1 Then 'This will trigger the Balaram and Srinivasan method
-        For i_sensor = 1 To  'Totalize the ratios to get average
+        For i_sensor = 1 To NUM_SENSORS 'Totalize the ratios to get average
           ratio_M_Avg_S(i_sensor) = temp_ratio_sum_S(i_sensor) / (COLLECT_TIME_POST_PULSE_SEC-60)'Get the average ratio from 60 to 100sec
           velocity_M_Balaram_S(i_sensor) = (Diff/xd)*LN(ratio_M_Avg_S(i_sensor)) 'Compute the Balaram and Srinivasan velocity method with average ratio and diffusivity
         Next i_sensor
@@ -269,9 +269,9 @@ BeginProg
       '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''  
     Else 'When we past 130seconds, reset everything
       i_sap_time = -1*COLLECT_TIME_PRE_PULSE_SEC
-      'Dim temp_ratio_sum_S() 'I think this would save compute time instead of for loop below
-      'Dim temp_ratio_sum_S() 'I think this would save compute time instead of for loop below
-      For i_sensor = 1 To 
+      'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
+      'Dim temp_ratio_sum_S(NUM_SENSORS) 'I think this would save compute time instead of for loop below
+      For i_sensor = 1 To NUM_SENSORS
         temp_ratio_sum_S(i_sensor) = 0
       Next
     EndIf
